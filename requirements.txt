@@ -2,3 +2,8 @@ scikit-learn
 pandas
 joblib
 gradio
+# tqdm is optional; used for progress bars in translation script
+datasets
+transformers
+tqdm
+torch
