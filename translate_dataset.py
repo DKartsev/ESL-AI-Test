@@ -1,5 +1,6 @@
 from datasets import load_dataset, Dataset
 from transformers import pipeline
+from tqdm.auto import tqdm
 import pandas as pd
 
 # Загрузка датасета UniversalCEFR
@@ -10,7 +11,12 @@ print(f"🔹 Загружено примеров: {len(dataset)}")
 translator = pipeline("translation", model="Helsinki-NLP/opus-mt-en-eo")
 
 # Перевод всех фраз
-translations = translator([x["text"] for x in dataset], max_length=256, batch_size=16)
+texts = [x["text"] for x in dataset]
+translations = []
+for i in tqdm(range(0, len(texts), 16), desc="Translating"):
+    batch = texts[i:i+16]
+    out = translator(batch, max_length=256)
+    translations.extend(out)
 
 # Подготовка нового датасета с переводом
 translated_data = pd.DataFrame({
