@@ -126,10 +126,8 @@ cefr_model.joblib
 cefr_vectorizer.joblib
 translated_cefr_dataset.csv
 *.joblib
-*.csv
 venv*/
 __pycache__/
 *.joblib
-*.csv
 __pycache__/
 venv*/
