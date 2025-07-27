@@ -1,22 +1,25 @@
-# ✅ Установка зависимостей (выполняй ОДИН РАЗ в терминале, не в коде!)
-# pip install datasets transformers pandas tqdm
-
-# 📦 Импорты
+import os
 import torch
 import pandas as pd
-from tqdm import tqdm
-from datasets import load_dataset
+from datasets import load_dataset, concatenate_datasets
 from transformers import pipeline
+from functools import partial
 
-# 📥 Список датасетов и модели перевода
-dataset_names = [
-    "UniversalCEFR/caes_es",       # испанский
-    "UniversalCEFR/cefr_sp_en",    # испанский ↔ английский
-    "UniversalCEFR/cefr_asag_en",  # английский
-    "UniversalCEFR/merlin_de",     # немецкий
-    "UniversalCEFR/kwiqiz_fr",     # французский
-    "UniversalCEFR/elle_et",       # эстонский
-]
+# ==== 🔧 Настройки ====
+OUTPUT_CSV = "translated_cefr_dataset.csv"
+TEXT_COLUMN = "text"
+CEFR_COLUMN = "cefr_level"
+LANG_COLUMN = "lang"
+BATCH_SIZE = 8  # можно увеличить, если хватает VRAM
+
+# Датасеты и модели
+dataset_names = {
+    "es": "UniversalCEFR/caes_es",
+    "en": "UniversalCEFR/cefr_asag_en",
+    "de": "UniversalCEFR/merlin_de",
+    "fr": "UniversalCEFR/kwiqiz_fr",
+    "et": "UniversalCEFR/elle_et",
+}
 
 lang_to_model = {
     "es": "Helsinki-NLP/opus-mt-es-eo",
@@ -26,52 +29,61 @@ lang_to_model = {
     "et": "Helsinki-NLP/opus-mt-et-eo",
 }
 
-# 📥 Загрузка всех датасетов
-dfs = []
-for dataset_name in dataset_names:
-    print(f"🔽 Загружаем {dataset_name}...")
-    dataset = load_dataset(dataset_name, split="train")
-    df = dataset.to_pandas()
-    dfs.append(df)
 
-combined_df = pd.concat(dfs, ignore_index=True)
-print(f"✅ Всего строк: {len(combined_df)}")
+# ==== 🔁 Переводим батч (для map)
+def translate_batch(examples, lang, model_name):
+    translator = pipeline("translation", model=model_name,
+                          device=0 if torch.cuda.is_available() else -1)
+    texts = examples[TEXT_COLUMN]
+    translations = []
 
-# 🎯 Только нужные колонки
-df = combined_df[["text", "cefr_level", "lang"]].dropna()
+    for i in range(0, len(texts), BATCH_SIZE):
+        batch = texts[i:i + BATCH_SIZE]
+        try:
+            outputs = translator(batch, max_length=512)
+            batch_translations = [o["translation_text"] for o in outputs]
+        except Exception as e:
+            print(f"⚠️ Ошибка при переводе: {e}")
+            batch_translations = ["N/A"] * len(batch)
+        translations.extend(batch_translations)
 
-# 🔁 Перевод текста
-translated_texts = []
-current_lang = None
-translator = None
+    return {"esperanto": translations}
 
-print("🔄 Переводим на эсперанто...")
-for i, row in tqdm(df.iterrows(), total=len(df)):
-    text = row["text"]
-    lang = row["lang"]
 
-    if lang != current_lang:
-        model_name = lang_to_model.get(lang)
-        if model_name is None:
-            translated_texts.append("N/A")
-            continue
-        print(f"\n🌐 Загружается модель: {model_name}")
-        translator = pipeline("translation", model=model_name,
-                              device=0 if torch.cuda.is_available() else -1)
-        current_lang = lang
+# ==== ⬇ Главная точка входа (важно для Windows!)
+def main():
+    all_datasets = []
 
-    try:
-        translated = translator(text[:512])[0]["translation_text"]
-    except Exception as e:
-        print(f"⚠️ Ошибка при переводе: {e}")
-        translated = "N/A"
+    for lang_code, dataset_name in dataset_names.items():
+        print(f"\n🔽 Загружается {dataset_name}...")
+        ds = load_dataset(dataset_name, split="train")
+        ds = ds.filter(lambda ex: ex[TEXT_COLUMN]
+                       is not None and ex[CEFR_COLUMN] is not None)
 
-    translated_texts.append(translated)
+        if LANG_COLUMN not in ds.column_names:
+            ds = ds.add_column(LANG_COLUMN, [lang_code] * len(ds))
 
-# 🧪 Добавим колонку
-df["esperanto"] = translated_texts
+        model_name = lang_to_model[lang_code]
+        print(f"🌐 Перевод {lang_code} через {model_name}...")
 
-# 💾 Сохраняем файл
-output_file = "translated_cefr_dataset.csv"
-df.to_csv(output_file, index=False)
-print(f"✅ Готово! Файл сохранён: {output_file}")
+        # 🔁 Перевод с map и multiprocessing
+        ds = ds.map(
+            partial(translate_batch, lang=lang_code, model_name=model_name),
+            batched=True,
+            batch_size=64,
+            num_proc=2,  # Можно уменьшить, если слабый ПК
+        )
+
+        all_datasets.append(ds)
+
+    # Объединяем всё
+    final_dataset = concatenate_datasets(all_datasets)
+    df = final_dataset.to_pandas()
+    df = df[[TEXT_COLUMN, CEFR_COLUMN, LANG_COLUMN, "esperanto"]]
+    df.to_csv(OUTPUT_CSV, index=False)
+    print(f"\n✅ Датасет сохранён в {OUTPUT_CSV}")
+
+
+# ==== ⚙ Запуск
+if __name__ == "__main__":
+    main()
