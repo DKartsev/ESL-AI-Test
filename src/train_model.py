@@ -1,26 +1,42 @@
+import pandas as pd
 import joblib
+from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import classification_report, confusion_matrix
 import matplotlib.pyplot as plt
 import seaborn as sns
-import pandas as pd
 
 
 def main():
-    # Загрузка признаков и целевой переменной
-    X = joblib.load("X_combined.joblib")
-    y = joblib.load("y.joblib")
+    print("📥 Загружаем датасет: data/translated_cefr_dataset.csv")
+    df = pd.read_csv("data/translated_cefr_dataset.csv")
+
+    if not {"esperanto", "cefr_level"}.issubset(df.columns):
+        raise ValueError(
+            "❌ В датасете должны быть колонки 'esperanto' и 'cefr_level'.")
+
+    X_text = df["esperanto"].astype(str)
+    y = df["cefr_level"]
+
+    print("🧠 Векторизация текста (TF-IDF)...")
+    vectorizer = TfidfVectorizer(max_features=5000)
+    X = vectorizer.fit_transform(X_text)
+
+    # Сохраняем признаки и векторизатор
+    joblib.dump(X, "X_combined.joblib")
+    joblib.dump(y, "y.joblib")
+    joblib.dump(vectorizer, "cefr_vectorizer_extended.joblib")
 
     print("📊 Распределение классов:")
     print(pd.Series(y).value_counts())
 
-    # Разделение на train/test
+    # Делим на train/test
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, stratify=y, random_state=42
     )
 
-    # Параметры для поиска
+    # Сетка параметров
     param_grid = {
         "C": [0.01, 0.1, 1, 10],
         "penalty": ["l2"],
@@ -28,7 +44,7 @@ def main():
         "class_weight": [None, "balanced"],
     }
 
-    # Поиск по сетке
+    print("🔎 GridSearchCV для LogisticRegression...")
     grid = GridSearchCV(
         LogisticRegression(max_iter=2000),
         param_grid,
@@ -39,11 +55,11 @@ def main():
     )
     grid.fit(X_train, y_train)
 
-    # Сохранение результатов
+    # Сохраняем результаты
     results_df = pd.DataFrame(grid.cv_results_).sort_values(
         by="mean_test_score", ascending=False)
     results_df.to_csv("grid_search_results_extended.csv", index=False)
-    print("📄 Результаты GridSearchCV сохранены в grid_search_results_extended.csv")
+    print("📄 Результаты сохранены в grid_search_results_extended.csv")
 
     print(f"✅ Лучшая модель: {grid.best_estimator_}")
     print(f"📈 Лучшая точность: {grid.best_score_:.4f}")
@@ -65,7 +81,7 @@ def main():
     plt.savefig("confusion_matrix_extended.png")
     plt.close()
 
-    # Сохранение модели
+    # Сохраняем модель
     joblib.dump(grid.best_estimator_, "cefr_model_extended.joblib")
     print("✅ Модель сохранена: cefr_model_extended.joblib")
 

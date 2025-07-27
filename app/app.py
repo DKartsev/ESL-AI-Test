@@ -1,24 +1,36 @@
 import gradio as gr
 import joblib
 
-# Загрузка модели и векторизатора
-model = joblib.load("cefr_model.joblib")
-vectorizer = joblib.load("cefr_vectorizer.joblib")
+# Пути к модели и векторизатору
+model_path = "models/cefr_model_best.joblib"
+vectorizer_path = "models/cefr_vectorizer_best.joblib"
 
-# Предсказание уровня
-def predict_level(text):
-    text_vec = vectorizer.transform([text])
-    prediction = model.predict(text_vec)[0]
-    return f"🌍 Прогнозируемый уровень CEFR: **{prediction}**"
+# Загрузка модели и векторизатора
+model = joblib.load(model_path)
+vectorizer = joblib.load(vectorizer_path)
+
+# Предсказание
+def predict_cefr(text):
+    if not text.strip():
+        return "⛔ Введите предложение на эсперанто."
+    X = vectorizer.transform([text])
+    prediction = model.predict(X)[0]
+    return f"🔤 Предсказанный уровень: {prediction}"
 
 # Интерфейс
-iface = gr.Interface(
-    fn=predict_level,
-    inputs=gr.Textbox(lines=2, placeholder="Введите фразу на эсперанто..."),
-    outputs="markdown",
-    title="📊 Оценка уровня владения языком (CEFR)",
-    description="Введите фразу на языке **эсперанто**, чтобы получить примерный уровень владения по шкале CEFR (A1–C2)."
+interface = gr.Interface(
+    fn=predict_cefr,
+    inputs=gr.Textbox(lines=2, placeholder="Введи фразу на эсперанто..."),
+    outputs="text",
+    title="📘 Оценка уровня CEFR на эсперанто",
+    description="Введи предложение на языке эсперанто, и модель оценит его уровень по шкале A1–C2.",
+    examples=[
+        ["Mi manĝas pomon."],
+        ["Ŝi legis interesan romanon."],
+        ["Ni diskutis la filozofiajn ideojn."],
+        ["La intertempa kunteksto kunfandiĝis kun sintaksa komplekseco."],
+    ]
 )
 
 if __name__ == "__main__":
-    iface.launch()
+    interface.launch()
