@@ -2,20 +2,23 @@ import gradio as gr
 import joblib
 
 # Пути к модели и векторизатору
-model_path = "models/cefr_model_best.joblib"
-vectorizer_path = "models/cefr_vectorizer_best.joblib"
+model_path = "models/cefr_model_extended.joblib"
+vectorizer_path = "models/cefr_vectorizer_extended.joblib"
 
 # Загрузка модели и векторизатора
 model = joblib.load(model_path)
 vectorizer = joblib.load(vectorizer_path)
 
 # Предсказание
+
+
 def predict_cefr(text):
     if not text.strip():
         return "⛔ Введите предложение на эсперанто."
     X = vectorizer.transform([text])
     prediction = model.predict(X)[0]
     return f"🔤 Предсказанный уровень: {prediction}"
+
 
 # Интерфейс
 interface = gr.Interface(
