@@ -1,45 +1,43 @@
-"""Translate the UniversalCEFR dataset in a streaming fashion."""
+# translate_dataset.py
 
 from datasets import load_dataset
 from transformers import pipeline
-from tqdm.auto import tqdm
 import pandas as pd
+from tqdm import tqdm
 
 
-def main() -> None:
-    """Stream the UniversalCEFR dataset and translate it batch by batch."""
+def main():
+    # Загружаем датасет
+    dataset = load_dataset("UniversalCEFR/cefr_sp_en", split="train")
 
-    # Загрузка датасета UniversalCEFR в режиме стриминга
-    dataset = load_dataset("UniversalCEFR/cefr_sp_en", split="train", streaming=True)
+    # Инициализируем pipeline для перевода с английского на эсперанто
+    translator = pipeline(
+        "translation", model="Helsinki-NLP/opus-mt-en-eo", device=-1)
 
-    # Инициализация переводчика (английский → эсперанто)
-    translator = pipeline("translation", model="Helsinki-NLP/opus-mt-en-eo")
-
-    batch_size = 16
-    buffer_texts = []
+    # Списки для хранения результатов
+    buffer_source = []
+    buffer_target = []
     buffer_labels = []
-    results = []
 
-    for example in tqdm(dataset, desc="Translating", unit="example"):
-        buffer_texts.append(example["text"])
-        buffer_labels.append(example["label"])
+    # Переводим все английские фразы на эсперанто
+    for example in tqdm(dataset, desc="Translating"):
+        english = example["text"]
+        esperanto = translator(english, max_length=128)[0]["translation_text"]
 
-        if len(buffer_texts) == batch_size:
-            outs = translator(buffer_texts, max_length=256)
-            for out, label in zip(outs, buffer_labels):
-                results.append({"text_eo": out["translation_text"], "level": label})
-            buffer_texts = []
-            buffer_labels = []
+        buffer_source.append(esperanto)
+        buffer_target.append(english)
+        buffer_labels.append(example["cefr_level"])  # исправили здесь!
 
-    # Обработка оставшихся примеров
-    if buffer_texts:
-        outs = translator(buffer_texts, max_length=256)
-        for out, label in zip(outs, buffer_labels):
-            results.append({"text_eo": out["translation_text"], "level": label})
+    # Сохраняем в DataFrame
+    df = pd.DataFrame({
+        "esperanto": buffer_source,
+        "english": buffer_target,
+        "cefr_level": buffer_labels
+    })
 
-    # Сохранение результатов в CSV
-    pd.DataFrame(results).to_csv("translated_cefr_dataset.csv", index=False)
-    print("✅ Датасет сохранён в translated_cefr_dataset.csv")
+    # Сохраняем в CSV
+    df.to_csv("translated_cefr_dataset.csv", index=False, encoding="utf-8")
+    print("✅ Переведённый датасет сохранён в translated_cefr_dataset.csv")
 
 
 if __name__ == "__main__":
